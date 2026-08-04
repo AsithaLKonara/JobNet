@@ -74,17 +74,39 @@ export async function withTimeout<T>(
 }
 
 /**
- * Strips dangerous script tags and excessive formatting while preserving clean snippet readability.
+ * Strips dangerous script tags and automated spam watermarks while preserving clean markdown line spacing.
  */
 export function sanitizeHtmlSnippet(text: string = ''): string {
   if (!text) return 'No detailed job description provided.';
-  return text
+  
+  // 1. Convert HTML block elements to clean markdown line breaks before stripping tags
+  let processed = text
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<\/li>/gi, '\n• ')
+    .replace(/<li>/gi, '• ')
+    .replace(/<\/h[1-6]>/gi, '\n\n')
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-    .replace(/<\/?[^>]+(>|$)/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 2500);
+    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
+
+  // 2. Strip all remaining HTML syntax tags
+  processed = processed.replace(/<\/?[^>]+(>|$)/g, '');
+
+  // 3. Purge automated recruiter anti-spam tracking watermarks and instruction spam
+  processed = processed.replace(/Please mention the word \*\*.+?\*\* and tag .+? to show you read the job post completely.+?see they're human\./gi, '');
+  processed = processed.replace(/Please mention the word .+? when applying to show you read the job post completely\./gi, '');
+  processed = processed.replace(/This is a beta feature to avoid spam applicants\./gi, '');
+  processed = processed.replace(/\(#([A-Za-z0-9+/=]{10,})\)/g, '');
+
+  // 4. Normalize spacing while preserving intentional newlines
+  processed = processed
+    .split('\n')
+    .map(line => line.replace(/\s+/g, ' ').trim())
+    .filter((line, index, arr) => line.length > 0 || (index > 0 && arr[index - 1].length > 0))
+    .join('\n')
+    .trim();
+
+  return processed.slice(0, 3000);
 }
 
 /**
@@ -97,9 +119,52 @@ export function inferJobTags(title: string, description: string = ''): string[] 
     'c++', 'c#', '.net', 'ruby', 'rails', 'php', 'laravel', 'vue', 'angular', 'svelte',
     'aws', 'gcp', 'azure', 'docker', 'kubernetes', 'terraform', 'sql', 'postgres', 'mongodb',
     'graphql', 'rest api', 'tailwind', 'ui/ux', 'design', 'figma', 'product manager', 'devops',
-    'machine learning', 'ai', 'data engineer', 'backend', 'frontend', 'full stack', 'remote'
+    'machine learning', 'ai', 'data engineer', 'backend', 'frontend', 'full stack', 'remote',
+    'cloud', 'cybersecurity', 'qa', 'mobile', 'react native', 'flutter', 'swift', 'kotlin'
   ];
   
   const matches = candidates.filter(tag => combined.includes(tag.toLowerCase()));
-  return Array.from(new Set(matches)).slice(0, 6); // Up to 6 most relevant tags
+  if (matches.length === 0) {
+    return ['engineering', 'global talent', 'verified tech'];
+  }
+  return Array.from(new Set(matches)).slice(0, 6);
+}
+
+/**
+ * Senior Architect Data Sanctity & Accuracy Guardrail:
+ * Intercepts third-party listings to identify and reject anomalous physical roles claiming to be "Remote"
+ * and sanitizes spammy tags that do not match the vacancy subject.
+ */
+export function validateAndCleanJob(job: NormalizedJob): NormalizedJob | null {
+  const titleLower = job.title.trim().toLowerCase();
+  const descLower = job.description.toLowerCase();
+
+  // 1. Block anomalous on-site manual trades from polluting worldwide remote technical feeds
+  const physicalManualTrades = /\b(fireman|firefighter|security guard|janitor|custodian|plumber|forklift|cashier|warehouse worker|electrician|mechanic|chef|cook|bartender|waiter|waitress|housekeeper|truck driver|taxi driver|delivery driver)\b/i;
+  
+  if (physicalManualTrades.test(titleLower) && !/\b(software|engineer|developer|it|tech|programmer|analyst|manager|sales|marketing|support|designer)\b/i.test(titleLower)) {
+    // A role titled simply "Fireman" or "Forklift Driver" claiming worldwide remote is a data anomaly/spam upload
+    console.warn(`[Data Sanctity Filter] Rejected anomalous job listing from ${job.provider}: "${job.title}" at "${job.company}"`);
+    return null;
+  }
+
+  // 2. Validate tags to strip hallucinated spam keywords from third-party boards
+  let cleanTags = job.tags.filter(tag => {
+    const t = tag.toLowerCase();
+    // If tag claims 'web dev', 'ecommerce', or 'amazon', verify it is actually mentioned in role or specifications
+    if (['web dev', 'dev', 'ecommerce', 'amazon', 'digital nomad', 'blockchain', 'crypto'].includes(t)) {
+      return titleLower.includes(t) || descLower.includes(t) || /\b(code|software|programming|web|developer|engineer|tech)\b/i.test(titleLower);
+    }
+    return true;
+  });
+
+  if (cleanTags.length === 0) {
+    cleanTags = inferJobTags(job.title, job.description);
+  }
+
+  return {
+    ...job,
+    tags: Array.from(new Set(cleanTags)).slice(0, 6),
+    description: sanitizeHtmlSnippet(job.description)
+  };
 }

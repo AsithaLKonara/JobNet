@@ -1,6 +1,6 @@
 import { JobSearchParams, NormalizedJob, SearchResultPayload, ProviderHealth } from '@/types/job';
 import { LIVE_PROVIDERS, FALLBACK_PROVIDER } from '@/providers/jobs';
-import { deduplicateJobs, inferJobTags, inferExperienceLevel } from '@/utils/helpers';
+import { deduplicateJobs, inferJobTags, inferExperienceLevel, validateAndCleanJob } from '@/utils/helpers';
 import { withDbFallback } from '@/lib/prisma';
 
 export class JobService {
@@ -92,6 +92,11 @@ export class JobService {
         }));
         providersUsed.push(FALLBACK_PROVIDER.name);
       }
+
+      // Pass through Data Sanctity verification filter to drop anomalous physical roles and spam tags
+      baseJobs = baseJobs
+        .map(job => validateAndCleanJob(job))
+        .filter((job): job is NormalizedJob => job !== null);
 
       // Deduplicate results
       baseJobs = deduplicateJobs(baseJobs);

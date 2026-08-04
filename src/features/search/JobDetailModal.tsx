@@ -6,6 +6,51 @@ import { NormalizedJob } from '@/types/job';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
+// Helper component to cleanly render structured markdown paragraphs, bullet points, and section titles
+function FormattedJobDescription({ text }: { text: string }) {
+  const paragraphs = text.split(/\n\n|\n(?=[A-Z0-9\s]{3,25}:)/);
+
+  return (
+    <div className="space-y-3.5 text-sm sm:text-base leading-relaxed font-normal text-gray-200 selection:bg-purple-600 selection:text-white">
+      {paragraphs.map((para, idx) => {
+        const lines = para.split('\n').map(l => l.trim()).filter(Boolean);
+        if (lines.length === 0) return null;
+
+        return (
+          <div key={idx} className="bg-white/[0.015] p-3.5 rounded-xl border border-white/5 space-y-1.5 shadow-sm">
+            {lines.map((line, i) => {
+              const isSectionHeader = /^[A-Z][A-Za-z0-9\s\/-]{2,35}:$/.test(line) || /^[A-Z\s]{4,35}:?$/.test(line);
+              const isBullet = line.startsWith('•') || line.startsWith('-') || line.startsWith('*');
+
+              if (isSectionHeader) {
+                return (
+                  <span key={i} className="block font-extrabold text-amber-300 tracking-wider uppercase text-xs pt-1.5 first:pt-0 pb-0.5 border-b border-white/5">
+                    {line.replace(/[*_]/g, '')}
+                  </span>
+                );
+              }
+
+              // Render inline markdown bolding (**word**) as highlighted badges
+              const formattedLine = line.split(/(\*\*.*?\*\*)/).map((part, index) => {
+                if (part.startsWith('**') && part.endsWith('**')) {
+                  return <strong key={index} className="text-white font-bold bg-purple-900/50 px-1.5 py-0.5 rounded border border-purple-500/30 text-xs sm:text-sm">{part.slice(2, -2)}</strong>;
+                }
+                return part;
+              });
+
+              return (
+                <span key={i} className={`block leading-relaxed ${isBullet ? 'pl-3.5 border-l-2 border-purple-400 my-1 text-gray-300 font-light' : 'text-gray-200'}`}>
+                  {formattedLine}
+                </span>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 interface JobDetailModalProps {
   job: NormalizedJob | null;
   onClose: () => void;
@@ -96,12 +141,10 @@ export function JobDetailModal({ job, onClose }: JobDetailModalProps) {
           </div>
 
           <div className="space-y-3">
-            <h4 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-1.5 border-b border-white/10 pb-1">
+            <h4 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-1.5 border-b border-white/10 pb-1.5">
               <Sparkles className="w-4 h-4 text-purple-400" /> Complete Role Specifications & Description
             </h4>
-            <div className="whitespace-pre-wrap text-gray-200 text-sm sm:text-base leading-relaxed font-normal selection:bg-purple-600 selection:text-white">
-              {job.description}
-            </div>
+            <FormattedJobDescription text={job.description} />
           </div>
 
           {job.tags && job.tags.length > 0 && (
