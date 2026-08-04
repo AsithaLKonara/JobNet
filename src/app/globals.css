@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0e0918;
+  --foreground: #f3f0f8;
+  --card-bg: rgba(22, 16, 36, 0.75);
+  --card-border: rgba(139, 92, 246, 0.2);
+  --accent-purple: #8b5cf6;
+  --accent-gradient: linear-gradient(135deg, #a78bfa 0%, #7c3aed 50%, #4f46e5 100%);
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  background-image: 
+    radial-gradient(at 15% 0%, rgba(139, 92, 246, 0.14) 0px, transparent 45%),
+    radial-gradient(at 85% 15%, rgba(79, 70, 229, 0.12) 0px, transparent 45%),
+    radial-gradient(at 50% 80%, rgba(168, 85, 247, 0.08) 0px, transparent 50%);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Custom Scrollbar for high-end aesthetic */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(14, 9, 24, 0.9);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(139, 92, 246, 0.35);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 92, 246, 0.6);
+}
+
+.glass-panel {
+  background: var(--card-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--card-border);
+  border-radius: 0.75rem;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-panel:hover {
+  border-color: rgba(167, 139, 250, 0.45);
+  box-shadow: 0 10px 25px -5px rgba(139, 92, 246, 0.18);
+}
+
+.text-gradient {
+  background: var(--accent-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}

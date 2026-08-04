@@ -1,0 +1,54 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Job {
+  id             String    @id @default(uuid())
+  externalId     String
+  provider       String
+  title          String
+  company        String
+  companyLogo    String?
+  description    String    @db.Text
+  location       String
+  country        String?
+  remote         Boolean   @default(false)
+  employmentType String?
+  salaryMin      Int?
+  salaryMax      Int?
+  salaryCurrency String?
+  salaryPeriod   String?
+  applyUrl       String
+  postedAt       DateTime  @default(now())
+  expiresAt      DateTime? 
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([provider, externalId])
+  @@index([title, location])
+  @@index([remote])
+}
+
+model SearchHistory {
+  id        String   @id @default(uuid())
+  keyword   String
+  location  String?
+  hitsCount Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([keyword])
+}
+
+model ProviderStatus {
+  id             String   @id @default(uuid())
+  providerName   String   @unique
+  isAvailable    Boolean  @default(true)
+  rateLimitTotal Int?
+  rateLimitUsed  Int      @default(0)
+  lastCheckedAt  DateTime @default(now())
+}
