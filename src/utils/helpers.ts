@@ -31,6 +31,24 @@ export function deduplicateJobs(jobs: NormalizedJob[]): NormalizedJob[] {
 }
 
 /**
+ * Predicts positional seniority level from job title and description text.
+ */
+export function inferExperienceLevel(title: string, description: string = ''): 'junior' | 'mid' | 'senior' | 'executive' {
+  const combined = `${title} ${description.slice(0, 350)}`.toLowerCase();
+  
+  if (/\b(chief|cto|cfo|ceo|vp|vice president|director|executive|head of)\b/.test(title.toLowerCase())) {
+    return 'executive';
+  }
+  if (/\b(staff|senior|snr|sr|principal|lead|mgr|manager|arch|architect)\b/.test(title.toLowerCase()) || /\b(5\+ years|6\+ years|7\+ years|8\+ years|10\+ years)\b/.test(combined)) {
+    return 'senior';
+  }
+  if (/\b(junior|juniors|jnr|jr|intern|internship|entry level|graduate|fresh|0-1 years|1-2 years)\b/.test(combined)) {
+    return 'junior';
+  }
+  return 'mid';
+}
+
+/**
  * Wraps any promise/fetch operation with a hard AbortSignal timeout to prevent hanging providers.
  */
 export async function withTimeout<T>(
@@ -63,7 +81,7 @@ export function sanitizeHtmlSnippet(text: string = ''): string {
   return text
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
     .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-    .replace(/<\/?[^>]+(>|$)/g, ' ') // strip remaining HTML tags to clean readable plain text
+    .replace(/<\/?[^>]+(>|$)/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 2500);

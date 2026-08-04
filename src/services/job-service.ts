@@ -1,70 +1,155 @@
 import { JobSearchParams, NormalizedJob, SearchResultPayload, ProviderHealth } from '@/types/job';
 import { LIVE_PROVIDERS, FALLBACK_PROVIDER } from '@/providers/jobs';
-import { deduplicateJobs, inferJobTags } from '@/utils/helpers';
+import { deduplicateJobs, inferJobTags, inferExperienceLevel } from '@/utils/helpers';
 import { withDbFallback } from '@/lib/prisma';
 
 export class JobService {
   /**
-   * Main entrypoint for worldwide job search aggregation, deduplication, and database caching.
+   * Main entrypoint for worldwide job search aggregation, deduplication, advanced filtering, and caching.
    */
   static async searchJobs(params: JobSearchParams): Promise<SearchResultPayload> {
     const page = params.page && params.page > 0 ? params.page : 1;
     const limit = params.limit && params.limit > 0 ? params.limit : 12;
+    const searchKeyword = (params.keyword || 'all').trim();
 
-    // 1. Record search keyword into PostgreSQL analytics asynchronously (fire & forget with fallback)
-    if (params.keyword || params.location) {
-      this.trackSearchAnalytics(params.keyword || 'all', params.location || 'worldwide');
-    }
+    // 1. Attempt Postgres database query if simple keyword/location search exists in cache
+    const cachedPayload = await withDbFallback(async (db) => {
+      if (!db) return null;
+      const history = await db.searchHistory.findFirst({
+        where: { keyword: searchKeyword },
+        orderBy: { createdAt: 'desc' }
+      });
 
-    // 2. Try fetching from active Live Providers in parallel with fault tolerance
-    const providerPromises = LIVE_PROVIDERS.map(async (provider) => {
-      try {
-        const results = await provider.searchJobs(params);
-        return { provider: provider.name, results, error: null };
-      } catch (err) {
-        console.warn(`[JobService] Provider ${provider.name} error:`, (err as Error)?.message);
-        return { provider: provider.name, results: [] as NormalizedJob[], error: (err as Error)?.message };
+      if (history && (Date.now() - history.createdAt.getTime()) < 15 * 60 * 1000) {
+        const cachedJobs = await db.job.findMany({
+          take: 40,
+          orderBy: { postedAt: 'desc' }
+        });
+        if (cachedJobs.length > 0) {
+          return cachedJobs.map(cached => ({
+            id: `postgres-cache-${cached.id}`,
+            externalId: cached.externalId,
+            provider: 'postgres-cache',
+            title: cached.title,
+            company: cached.company,
+            companyLogo: cached.companyLogo || undefined,
+            location: cached.location,
+            country: cached.country || undefined,
+            remote: cached.remote,
+            employmentType: cached.employmentType || 'Full-time',
+            experienceLevel: inferExperienceLevel(cached.title, cached.description),
+            salary: cached.salaryMin ? {
+              min: cached.salaryMin,
+              max: cached.salaryMax || undefined,
+              currency: cached.salaryCurrency || 'USD',
+              period: (cached.salaryPeriod as 'yearly' | 'monthly' | 'hourly') || 'yearly',
+              text: `${cached.salaryCurrency || '$'} ${cached.salaryMin.toLocaleString()}${cached.salaryMax ? ' - ' + cached.salaryMax.toLocaleString() : ''}`
+            } : undefined,
+            description: cached.description,
+            applyUrl: cached.applyUrl,
+            postedAt: cached.postedAt.toISOString(),
+            tags: inferJobTags(cached.title, cached.description)
+          } as NormalizedJob));
+        }
       }
-    });
+      return null;
+    }, null);
 
-    const settledResults = await Promise.allSettled(providerPromises);
-    const allJobs: NormalizedJob[] = [];
+    let baseJobs: NormalizedJob[] = [];
+    let fromCacheCount = 0;
     const providersUsed: string[] = [];
 
-    for (const result of settledResults) {
-      if (result.status === 'fulfilled' && result.value.results.length > 0) {
-        allJobs.push(...result.value.results);
-        providersUsed.push(result.value.provider);
+    if (cachedPayload && cachedPayload.length > 0) {
+      baseJobs = cachedPayload;
+      fromCacheCount = cachedPayload.length;
+      providersUsed.push('postgres-cache');
+    } else {
+      // 2. Concurrently fetch across all live worldwide provider integrations via Promise.allSettled
+      const providerPromises = LIVE_PROVIDERS.map(provider => {
+        return provider.searchJobs(params).then(results => ({ provider: provider.name, results }));
+      });
+
+      const settledResults = await Promise.allSettled(providerPromises);
+
+      for (const result of settledResults) {
+        if (result.status === 'fulfilled' && result.value.results.length > 0) {
+          const enriched = result.value.results.map(j => ({
+            ...j,
+            experienceLevel: j.experienceLevel || inferExperienceLevel(j.title, j.description)
+          }));
+          baseJobs = baseJobs.concat(enriched);
+          providersUsed.push(result.value.provider);
+        }
+      }
+
+      // 3. Fallback circuit breaker if all live networks fail or rate-limit
+      if (baseJobs.length === 0) {
+        console.warn('[JobService Circuit Breaker] Live providers returned 0 results. Executing resilient fallback feed.');
+        const fallbackResults = await FALLBACK_PROVIDER.searchJobs(params);
+        baseJobs = fallbackResults.map(j => ({
+          ...j,
+          experienceLevel: j.experienceLevel || inferExperienceLevel(j.title, j.description)
+        }));
+        providersUsed.push(FALLBACK_PROVIDER.name);
+      }
+
+      // Deduplicate results
+      baseJobs = deduplicateJobs(baseJobs);
+
+      // Asynchronously store search metrics into Postgres cache without slowing down user response
+      if (baseJobs.length > 0 && !providersUsed.includes('postgres-cache')) {
+        withDbFallback(async (db) => {
+          if (!db) return null;
+          await db.searchHistory.create({
+            data: { keyword: searchKeyword, location: params.location || null, hitsCount: baseJobs.length }
+          });
+        }, null).catch(() => {});
       }
     }
 
-    // 3. Check Database Cache for additional matching unexpired jobs
-    const cachedJobs = await this.fetchCachedJobs(params);
-    if (cachedJobs.length > 0) {
-      allJobs.push(...cachedJobs);
-      if (!providersUsed.includes('postgres-cache')) providersUsed.push('postgres-cache');
+    // 4. Apply Advanced Multi-Dimensional Filtering (Experience, Min Salary, Provider, Date Posted)
+    let filteredJobs = baseJobs.map(j => ({
+      ...j,
+      experienceLevel: j.experienceLevel || inferExperienceLevel(j.title, j.description)
+    }));
+
+    if (params.experience && params.experience !== 'any' && params.experience !== '') {
+      filteredJobs = filteredJobs.filter(j => j.experienceLevel === params.experience);
     }
 
-    // 4. Deduplicate aggregated jobs
-    let uniqueJobs = deduplicateJobs(allJobs);
-
-    // 5. Fallback Resilience: If zero listings returned (e.g. offline dev or rate limiting), invoke fallback catalog
-    if (uniqueJobs.length === 0) {
-      const fallbackJobs = await FALLBACK_PROVIDER.searchJobs(params);
-      uniqueJobs = deduplicateJobs(fallbackJobs);
-      providersUsed.push('mock-resilience-catalog');
+    if (params.provider && params.provider !== 'all' && params.provider !== '') {
+      filteredJobs = filteredJobs.filter(j => j.provider.toLowerCase().includes(params.provider!.toLowerCase()));
     }
 
-    // 6. Asynchronously save new fetched listings into PostgreSQL cache without slowing down user response
-    if (uniqueJobs.length > 0 && !providersUsed.includes('mock-resilience-catalog')) {
-      this.cacheJobsToDatabase(uniqueJobs);
+    if (params.minSalary && params.minSalary > 0) {
+      filteredJobs = filteredJobs.filter(j => {
+        if (!j.salary?.min) return false;
+        const annualized = j.salary.period === 'hourly' ? j.salary.min * 2000 : j.salary.min;
+        return annualized >= params.minSalary!;
+      });
     }
 
-    // 7. Paginate results in memory before returning to UI
-    const total = uniqueJobs.length;
-    const totalPages = Math.ceil(total / limit) || 1;
+    if (params.datePosted && params.datePosted !== 'any' && params.datePosted !== '') {
+      const now = Date.now();
+      const thresholds: Record<string, number> = {
+        '24h': 24 * 60 * 60 * 1000,
+        '7d': 7 * 24 * 60 * 60 * 1000,
+        '30d': 30 * 24 * 60 * 60 * 1000,
+      };
+      const maxAgeMs = thresholds[params.datePosted] || 0;
+      if (maxAgeMs > 0) {
+        filteredJobs = filteredJobs.filter(j => {
+          const ts = new Date(j.postedAt).getTime();
+          return !isNaN(ts) && (now - ts) <= maxAgeMs;
+        });
+      }
+    }
+
+    // 5. Paginate final filtered results
+    const total = filteredJobs.length;
+    const totalPages = Math.max(1, Math.ceil(total / limit));
     const startIndex = (page - 1) * limit;
-    const paginatedJobs = uniqueJobs.slice(startIndex, startIndex + limit);
+    const paginatedJobs = filteredJobs.slice(startIndex, startIndex + limit);
 
     return {
       jobs: paginatedJobs,
@@ -72,72 +157,81 @@ export class JobService {
       page,
       limit,
       totalPages,
-      providersUsed,
-      fromCacheCount: cachedJobs.length
+      providersUsed: Array.from(new Set(providersUsed)),
+      fromCacheCount
     };
   }
 
   /**
-   * Retrieves an individual job listing by ID from memory, live feeds, or Postgres cache.
+   * Retrieves an individual job listing by ID from DB cache or live provider networks.
    */
-  static async getJobById(jobId: string): Promise<NormalizedJob | null> {
-    // Check fallback/mock catalog first for immediate matching
-    if (jobId.startsWith('mock') || jobId.includes('mock')) {
-      return FALLBACK_PROVIDER.getJob ? await FALLBACK_PROVIDER.getJob(jobId) : null;
-    }
+  static async getJobById(id: string): Promise<NormalizedJob | null> {
+    const rawId = id.startsWith('postgres-cache-') ? id.replace('postgres-cache-', '') : id;
 
-    // Check PostgreSQL database cache
-    const cached = await withDbFallback(async (db) => {
-      return await db.job.findFirst({
-        where: { OR: [{ id: jobId }, { externalId: jobId }] }
-      });
+    const cachedJob = await withDbFallback(async (db) => {
+      if (!db) return null;
+      return await db.job.findUnique({ where: { id: rawId } }).catch(() => null);
     }, null);
 
-    if (cached) {
+    if (cachedJob) {
       return {
-        id: cached.id,
-        externalId: cached.externalId,
-        provider: cached.provider,
-        title: cached.title,
-        company: cached.company,
-        companyLogo: cached.companyLogo || undefined,
-        location: cached.location,
-        country: cached.country || 'Worldwide',
-        remote: cached.remote,
-        employmentType: cached.employmentType || 'Full-time',
-        salary: cached.salaryMin ? {
-          min: cached.salaryMin,
-          max: cached.salaryMax || undefined,
-          currency: cached.salaryCurrency || 'USD',
-          period: (cached.salaryPeriod as 'yearly' | 'monthly' | 'hourly') || 'yearly',
-          text: `${cached.salaryCurrency || '$'} ${cached.salaryMin.toLocaleString()}${cached.salaryMax ? ' - ' + cached.salaryMax.toLocaleString() : ''}`
+        id: `postgres-cache-${cachedJob.id}`,
+        externalId: cachedJob.externalId,
+        provider: 'postgres-cache',
+        title: cachedJob.title,
+        company: cachedJob.company,
+        companyLogo: cachedJob.companyLogo || undefined,
+        location: cachedJob.location,
+        country: cachedJob.country || undefined,
+        remote: cachedJob.remote,
+        employmentType: cachedJob.employmentType || 'Full-time',
+        experienceLevel: inferExperienceLevel(cachedJob.title, cachedJob.description),
+        salary: cachedJob.salaryMin ? {
+          min: cachedJob.salaryMin,
+          max: cachedJob.salaryMax || undefined,
+          currency: cachedJob.salaryCurrency || 'USD',
+          period: (cachedJob.salaryPeriod as 'yearly' | 'monthly' | 'hourly') || 'yearly',
+          text: `${cachedJob.salaryCurrency || '$'} ${cachedJob.salaryMin.toLocaleString()}${cachedJob.salaryMax ? ' - ' + cachedJob.salaryMax.toLocaleString() : ''}`
         } : undefined,
-        description: cached.description,
-        applyUrl: cached.applyUrl,
-        postedAt: cached.postedAt.toISOString(),
-        tags: inferJobTags(cached.title, cached.description)
-      };
+        description: cachedJob.description,
+        applyUrl: cachedJob.applyUrl,
+        postedAt: cachedJob.postedAt.toISOString(),
+        tags: inferJobTags(cachedJob.title, cachedJob.description)
+      } as NormalizedJob;
     }
 
-    // Fallback to searching providers if not found in db
-    const searchRes = await this.searchJobs({ limit: 50 });
-    return searchRes.jobs.find(j => j.id === jobId || j.externalId === jobId) || null;
+    // Search across integrated feeds
+    for (const p of [...LIVE_PROVIDERS, FALLBACK_PROVIDER]) {
+      if (p.getJob) {
+        try {
+          const res = await p.getJob(id);
+          if (res) {
+            return {
+              ...res,
+              experienceLevel: res.experienceLevel || inferExperienceLevel(res.title, res.description)
+            };
+          }
+        } catch {}
+      }
+    }
+    return null;
   }
 
   /**
-   * Retrieves live diagnostic health metrics across all integrated providers.
+   * Diagnostic telemetry check across integrated feeds.
    */
   static async checkProviderHealth(): Promise<ProviderHealth[]> {
     const health: ProviderHealth[] = [];
-    
+    const testParams: JobSearchParams = { limit: 1 };
+
     for (const provider of LIVE_PROVIDERS) {
       const start = Date.now();
       try {
-        const jobs = await provider.searchJobs({ limit: 1 });
+        await provider.searchJobs(testParams);
         const latencyMs = Date.now() - start;
         health.push({
           provider: provider.name,
-          status: jobs.length > 0 || latencyMs < 4000 ? 'online' : 'degraded',
+          status: latencyMs < 2500 ? 'online' : 'degraded',
           latencyMs,
           lastUpdated: new Date().toISOString()
         });
@@ -151,114 +245,24 @@ export class JobService {
       }
     }
 
-    // Include fallback resilience catalog status
+    const dbStart = Date.now();
+    const dbHealthy = await withDbFallback(async (db) => {
+      if (!db) return false;
+      await db.$queryRaw`SELECT 1`;
+      return true;
+    }, false);
+
     health.push({
-      provider: FALLBACK_PROVIDER.name,
-      status: 'online',
-      latencyMs: 10,
+      provider: 'postgres-cache',
+      status: dbHealthy ? 'online' : 'offline',
+      latencyMs: Date.now() - dbStart,
       lastUpdated: new Date().toISOString()
     });
 
     return health;
   }
 
-  // --- Private Async Database Helpers ---
-
-  private static async fetchCachedJobs(params: JobSearchParams): Promise<NormalizedJob[]> {
-    return withDbFallback(async (db) => {
-      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      
-      const records = await db.job.findMany({
-        where: {
-          postedAt: { gte: twentyFourHoursAgo },
-          ...(params.keyword ? {
-            OR: [
-              { title: { contains: params.keyword, mode: 'insensitive' } },
-              { company: { contains: params.keyword, mode: 'insensitive' } },
-              { description: { contains: params.keyword, mode: 'insensitive' } }
-            ]
-          } : {}),
-          ...(params.location ? {
-            location: { contains: params.location, mode: 'insensitive' }
-          } : {}),
-          ...(params.remote === true ? { remote: true } : {})
-        },
-        take: 20
-      });
-
-      return records.map(r => ({
-        id: r.id,
-        externalId: r.externalId,
-        provider: 'postgres-cache',
-        title: r.title,
-        company: r.company,
-        companyLogo: r.companyLogo || undefined,
-        location: r.location,
-        country: r.country || 'Worldwide',
-        remote: r.remote,
-        employmentType: r.employmentType || 'Full-time',
-        salary: r.salaryMin ? {
-          min: r.salaryMin,
-          max: r.salaryMax || undefined,
-          currency: r.salaryCurrency || 'USD',
-          period: (r.salaryPeriod as 'yearly' | 'monthly' | 'hourly') || 'yearly',
-          text: `${r.salaryCurrency || '$'} ${r.salaryMin.toLocaleString()}`
-        } : undefined,
-        description: r.description,
-        applyUrl: r.applyUrl,
-        postedAt: r.postedAt.toISOString(),
-        tags: inferJobTags(r.title, r.description)
-      }));
-    }, [] as NormalizedJob[]);
-  }
-
-  private static async cacheJobsToDatabase(jobs: NormalizedJob[]): Promise<void> {
-    await withDbFallback(async (db) => {
-      const toInsert = jobs.slice(0, 30).map(j => ({
-        id: j.id,
-        externalId: j.externalId || j.id,
-        provider: j.provider,
-        title: j.title.slice(0, 150),
-        company: j.company.slice(0, 100),
-        companyLogo: j.companyLogo || null,
-        description: (j.description || '').slice(0, 4500),
-        location: (j.location || 'Worldwide').slice(0, 100),
-        country: j.country || 'Worldwide',
-        remote: j.remote || false,
-        employmentType: (j.employmentType || 'Full-time').slice(0, 50),
-        salaryMin: j.salary?.min ? Math.min(j.salary.min, 2147483647) : null,
-        salaryMax: j.salary?.max ? Math.min(j.salary.max, 2147483647) : null,
-        salaryCurrency: j.salary?.currency || null,
-        salaryPeriod: j.salary?.period || null,
-        applyUrl: j.applyUrl.slice(0, 500)
-      }));
-
-      await db.job.createMany({
-        data: toInsert,
-        skipDuplicates: true
-      });
-    }, undefined);
-  }
-
-  private static async trackSearchAnalytics(keyword: string, location: string): Promise<void> {
-    await withDbFallback(async (db) => {
-      const cleanKeyword = keyword.toLowerCase().trim().slice(0, 50);
-      const cleanLocation = location.toLowerCase().trim().slice(0, 50);
-      
-      const existing = await db.searchHistory.findFirst({
-        where: { keyword: cleanKeyword, location: cleanLocation }
-      });
-
-      if (existing) {
-        await db.searchHistory.update({
-          where: { id: existing.id },
-          data: { hitsCount: { increment: 1 } }
-        });
-      } else {
-        await db.searchHistory.create({
-          data: { keyword: cleanKeyword, location: cleanLocation, hitsCount: 1 }
-        });
-      }
-    }, undefined);
+  static async getProvidersHealth(): Promise<ProviderHealth[]> {
+    return this.checkProviderHealth();
   }
 }

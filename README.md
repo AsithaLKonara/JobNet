@@ -12,7 +12,12 @@
 
 ## 🌟 Key Engineering Architectural Highlights
 
-### 1. ⚡ Multi-Provider Concurrent Aggregation Engine
+### 1. ✨ Hybrid Groq AI Llama-3 RAG & Semantic Matching Engine
+- **CV & Prompt Ingestion:** Users can paste their complete resume/CV text or describe career objectives in natural language (e.g. *"Senior Full Stack Engineer in Next.js seeking remote $140k+ opportunity"*).
+- **Lightning-Fast LLM Inference:** Integrates the official `@groq/groq-sdk` with `llama-3.3-70b-versatile` structured JSON completion to assign an explicit **0-100% Compatibility Score**, generate personalized alignment rationales, and extract positional seniority levels.
+- **Resilient Fallback Vector Engine:** Features automatic failover to an algorithmic TF-IDF vector similarity matcher if API credentials are unassigned or offline—guaranteeing zero downtime during development or cloud network interruptions.
+
+### 2. ⚡ Multi-Provider Concurrent Aggregation Engine
 Instead of relying on a single vulnerability-prone data feed, JobNet features an extensible provider architecture (`src/providers/`):
 - **Integrated Feeds:** Concurrently interrogates **RemoteOK**, **USAJOBS (U.S. Federal Platform)**, **Arbeitnow**, **Adzuna**, and resilient fallback datasets.
 - **Asynchronous Isolation:** Evaluated via strict `Promise.allSettled()` execution vectors. Single-provider network latencies, rate limits, or regional outages never degrade search latency for the end user.
@@ -133,9 +138,10 @@ Open [http://localhost:3000](http://localhost:3000) (or port `3001` if `3000` is
 
 All frontend requests route safely through local Next.js server APIs to prevent client-side exposure of third-party API keys.
 
-| Endpoint | Method | Query Parameters | Description |
+| Endpoint | Method | Query / Body Parameters | Description |
 | :--- | :--- | :--- | :--- |
-| `/api/jobs/search` | `GET` | `keyword`, `location`, `remote` (`true`/`false`), `employmentType`, `page`, `limit` | Executes multi-provider aggregation, applies deduplication hashes, records search analytics, and returns normalized listings. |
+| `/api/jobs/rag-search` | `POST` | Body: `{ prompt: string, filters?: object }` | Executes Hybrid TF-IDF vector pre-filtering and Groq AI Llama-3 structured JSON inference to evaluate CV synergy and compatibility scores. |
+| `/api/jobs/search` | `GET` | `keyword`, `location`, `remote`, `employmentType`, `experience`, `minSalary`, `datePosted`, `provider`, `page`, `limit` | Executes multi-provider aggregation, applies advanced multi-dimensional screening, deduplicates results, and records query analytics. |
 | `/api/jobs/[id]` | `GET` | *None (Dynamic Route)* | Retrieves extended specifications and application metadata for a targeted vacancy ID. |
 | `/api/health` | `GET` | *None* | Runs asynchronous ping tests across all configured API network endpoints and verifies PostgreSQL pool state. |
 

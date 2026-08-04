@@ -5,7 +5,7 @@ import { JobSearchParams } from '@/types/job';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function GET(request: NextRequest) {
+export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
     const { searchParams } = new URL(request.url);
     
@@ -14,7 +14,11 @@ export async function GET(request: NextRequest) {
       location: searchParams.get('location') || undefined,
       country: searchParams.get('country') || undefined,
       remote: searchParams.get('remote') === 'true',
-      employmentType: searchParams.get('employmentType') as JobSearchParams['employmentType'] || undefined,
+      employmentType: searchParams.get('employmentType') || undefined,
+      experience: searchParams.get('experience') || undefined,
+      minSalary: searchParams.has('minSalary') ? parseInt(searchParams.get('minSalary')!, 10) : undefined,
+      datePosted: searchParams.get('datePosted') || undefined,
+      provider: searchParams.get('provider') || undefined,
       page: searchParams.has('page') ? parseInt(searchParams.get('page')!, 10) : 1,
       limit: searchParams.has('limit') ? parseInt(searchParams.get('limit')!, 10) : 12
     };
@@ -23,44 +27,22 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      timestamp: new Date().toISOString(),
-      data: payload
+      data: payload,
+      meta: {
+        timestamp: new Date().toISOString(),
+        engine: 'JobNet Worldwide Multi-Provider Aggregator'
+      }
+    }, {
+      status: 200,
+      headers: {
+        'Cache-Control': 's-maxage=60, stale-while-revalidate=120'
+      }
     });
-
   } catch (error) {
-    console.error('[API /api/jobs/search GET Error]', error);
-    return NextResponse.json(
-      { success: false, error: 'Internal server error while searching jobs' },
-      { status: 500 }
-    );
-  }
-}
-
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const params: JobSearchParams = {
-      keyword: body.keyword,
-      location: body.location,
-      country: body.country,
-      remote: Boolean(body.remote),
-      employmentType: body.employmentType,
-      page: Number(body.page) || 1,
-      limit: Number(body.limit) || 12
-    };
-
-    const payload = await JobService.searchJobs(params);
-
+    console.error('[GET /api/jobs/search Error]:', error);
     return NextResponse.json({
-      success: true,
-      timestamp: new Date().toISOString(),
-      data: payload
-    });
-  } catch (error) {
-    console.error('[API /api/jobs/search POST Error]', error);
-    return NextResponse.json(
-      { success: false, error: 'Invalid payload or internal processing failure' },
-      { status: 400 }
-    );
+      success: false,
+      error: 'Failed to retrieve worldwide job listings.'
+    }, { status: 500 });
   }
 }

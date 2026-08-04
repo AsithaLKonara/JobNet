@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { X, ExternalLink, Building2, MapPin, DollarSign, Calendar, ShieldCheck, Share2, Sparkles, Tag } from 'lucide-react';
+import { X, ExternalLink, Building2, MapPin, DollarSign, Calendar, ShieldCheck, Share2, Sparkles, Tag, Bot, Zap } from 'lucide-react';
 import { NormalizedJob } from '@/types/job';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,8 @@ export function JobDetailModal({ job, onClose }: JobDetailModalProps) {
     alert('Link copied to clipboard!');
   };
 
+  const hasAiScore = typeof job.aiScore === 'number';
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/80 backdrop-blur-sm animate-fadeIn overflow-y-auto">
       <div 
@@ -26,14 +28,15 @@ export function JobDetailModal({ job, onClose }: JobDetailModalProps) {
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Header Section */}
-        <div className="p-6 border-b border-purple-900/50 bg-gradient-to-r from-purple-950/60 via-indigo-950/40 to-transparent flex items-start justify-between gap-4 relative">
-          <div className="space-y-2 max-w-[85%]">
+        <div className="p-6 border-b border-purple-900/50 bg-gradient-to-r from-purple-950/80 via-indigo-950/50 to-transparent flex items-start justify-between gap-4 relative">
+          <div className="space-y-2.5 max-w-[85%]">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs font-bold uppercase tracking-wider text-purple-400 flex items-center gap-1">
                 <Building2 className="w-3.5 h-3.5" /> {job.company}
               </span>
               <Badge variant="purple">{job.provider}</Badge>
-              {job.remote && <Badge variant="green">Worldwide Remote Option</Badge>}
+              {job.remote && <Badge variant="green">Worldwide Remote</Badge>}
+              {job.experienceLevel && <Badge variant="outline" className="capitalize text-amber-300 border-amber-500/30">{job.experienceLevel} Level</Badge>}
             </div>
             <h2 className="text-xl sm:text-2xl font-extrabold text-white leading-tight">
               {job.title}
@@ -43,7 +46,7 @@ export function JobDetailModal({ job, onClose }: JobDetailModalProps) {
                 <MapPin className="w-3.5 h-3.5 text-indigo-400" /> {job.location} ({job.country || 'Global'})
               </span>
               {job.salary?.text && (
-                <span className="flex items-center gap-1 font-bold text-emerald-400 bg-emerald-950/50 px-2 py-0.5 rounded border border-emerald-500/30">
+                <span className="flex items-center gap-1 font-bold text-emerald-400 bg-emerald-950/50 px-2.5 py-0.5 rounded border border-emerald-500/30">
                   <DollarSign className="w-3.5 h-3.5" /> {job.salary.text}
                 </span>
               )}
@@ -63,6 +66,28 @@ export function JobDetailModal({ job, onClose }: JobDetailModalProps) {
 
         {/* Scrollable Body Content */}
         <div className="p-6 overflow-y-auto space-y-6 text-sm text-gray-300 leading-relaxed font-light flex-1">
+          
+          {/* Groq AI RAG Deep Diagnostic Block */}
+          {hasAiScore && (
+            <div className="p-4 rounded-xl bg-gradient-to-r from-purple-950 via-indigo-950 to-purple-950 border-2 border-purple-500/50 space-y-2 shadow-lg">
+              <div className="flex items-center justify-between border-b border-purple-500/30 pb-2">
+                <span className="flex items-center gap-1.5 font-extrabold text-amber-300 text-sm">
+                  <Bot className="w-4 h-4 text-purple-400" /> Groq AI RAG Talent Evaluation
+                </span>
+                <Badge variant="green" className="text-xs px-3 py-0.5 font-extrabold bg-emerald-950 text-emerald-300 border-emerald-500/40">
+                  ✨ {job.aiScore}% Compatibility Score
+                </Badge>
+              </div>
+              <p className="text-gray-200 text-xs sm:text-sm leading-relaxed font-normal pt-1">
+                {job.aiRationale}
+              </p>
+              <div className="flex items-center justify-between text-[11px] text-purple-300 pt-1 font-mono">
+                <span>Primary Synergy: <strong>{job.aiKeyStrength || 'Stack & Seniority Alignment'}</strong></span>
+                <span className="flex items-center gap-1"><Zap className="w-3 h-3 text-amber-300" /> Verified by Llama-3.3 Engine</span>
+              </div>
+            </div>
+          )}
+
           <div className="bg-purple-950/30 p-4 rounded-xl border border-purple-800/30 flex items-center justify-between gap-4">
             <div className="text-xs text-purple-200">
               <span className="font-semibold">Application Protection Notice:</span> You will be securely transitioned directly to the official employer vacancy portal.
