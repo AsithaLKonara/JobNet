@@ -17,9 +17,9 @@
 - **Lightning-Fast LLM Inference:** Integrates the official `@groq/groq-sdk` with `llama-3.3-70b-versatile` structured JSON completion to assign an explicit **0-100% Compatibility Score**, generate personalized alignment rationales, and extract positional seniority levels.
 - **Resilient Fallback Vector Engine:** Features automatic failover to an algorithmic TF-IDF vector similarity matcher if API credentials are unassigned or offline—guaranteeing zero downtime during development or cloud network interruptions.
 
-### 2. ⚡ Multi-Provider Concurrent Aggregation Engine
-Instead of relying on a single vulnerability-prone data feed, JobNet features an extensible provider architecture (`src/providers/`):
-- **Integrated Feeds:** Concurrently interrogates **RemoteOK**, **USAJOBS (U.S. Federal Platform)**, **Arbeitnow**, **Adzuna**, and resilient fallback datasets.
+### 2. ⚡ Multi-Provider Concurrent Aggregation Engine (8 Global Networks)
+Instead of relying on a single vulnerability-prone data feed, JobNet features an extensible 8-network provider architecture (`src/providers/`):
+- **Integrated Feeds:** Concurrently interrogates **RemoteOK** (Remote Tech), **USAJOBS** (U.S. Federal Platform), **Arbeitnow** (EU/Visa Sponsorship), **Adzuna** (16+ Nations), **Jooble** (Worldwide Aggregates), **Careerjet** (Global Affiliate Engine), **Reed.co.uk** (UK & Europe), **Findwork.dev** (Global Dev & Startups), and resilient fallback datasets.
 - **Asynchronous Isolation:** Evaluated via strict `Promise.allSettled()` execution vectors. Single-provider network latencies, rate limits, or regional outages never degrade search latency for the end user.
 - **Real-Time Deduplication:** Implements cryptographic MD5-equivalent hashing (`src/utils/helpers.ts`) over normalized company names, vacancy roles, and coordinate strings to purge cross-board duplicates in milliseconds.
 

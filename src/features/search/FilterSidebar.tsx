@@ -72,10 +72,14 @@ export function FilterSidebar({
   ];
 
   const feedSources = [
-    { label: 'All Feeds (Aggregate)', value: 'all' },
+    { label: 'All Feeds (8 Networks + Cache)', value: 'all' },
     { label: 'RemoteOK', value: 'remoteok' },
+    { label: 'Findwork (Tech & Dev)', value: 'findwork' },
+    { label: 'Jooble (Global)', value: 'jooble' },
+    { label: 'Careerjet (Worldwide)', value: 'careerjet' },
+    { label: 'Reed.co.uk (UK Market)', value: 'reed' },
     { label: 'USAJOBS (Federal)', value: 'usajobs' },
-    { label: 'Arbeitnow', value: 'arbeitnow' },
+    { label: 'Arbeitnow (EU/Remote)', value: 'arbeitnow' },
     { label: 'Adzuna Network', value: 'adzuna' },
     { label: 'Postgres Cache', value: 'postgres-cache' }
   ];

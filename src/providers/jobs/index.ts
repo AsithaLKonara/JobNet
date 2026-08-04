@@ -1,30 +1,35 @@
-import { JobProvider } from '@/types/job';
-import { MockJobProvider } from './mock-provider';
-import { RemoteOKProvider } from './remote-ok';
-import { ArbeitnowProvider } from './arbeitnow';
 import { AdzunaProvider } from './adzuna';
 import { USAJOBSProvider } from './usajobs';
+import { ArbeitnowProvider } from './arbeitnow';
+import { RemoteOKProvider } from './remote-ok';
+import { JoobleProvider } from './jooble';
+import { CareerjetProvider } from './careerjet';
+import { ReedProvider } from './reed';
+import { FindworkProvider } from './findwork';
+import { MockJobProvider } from './mock-provider';
+import { JobProvider } from '@/types/job';
 
-// Instantiate all active job provider services
-export const mockJobProvider = new MockJobProvider();
-export const remoteOKProvider = new RemoteOKProvider();
-export const arbeitnowProvider = new ArbeitnowProvider();
-export const adzunaProvider = new AdzunaProvider();
-export const usajobsProvider = new USAJOBSProvider();
-
-/**
- * List of active external live providers to fan out concurrent job searches to.
- */
+// Concurrently interrogated across 8 worldwide networks via Promise.allSettled
 export const LIVE_PROVIDERS: JobProvider[] = [
-  remoteOKProvider,
-  arbeitnowProvider,
-  adzunaProvider,
-  usajobsProvider
+  new RemoteOKProvider(),
+  new ArbeitnowProvider(),
+  new USAJOBSProvider(),
+  new AdzunaProvider(),
+  new JoobleProvider(),
+  new CareerjetProvider(),
+  new ReedProvider(),
+  new FindworkProvider()
 ];
 
-/**
- * Fallback local resilience provider when all live providers timeout or offline dev is active.
- */
-export const FALLBACK_PROVIDER: JobProvider = mockJobProvider;
+// Resilient zero-downtime offline circuit breaker dataset
+export const FALLBACK_PROVIDER: JobProvider = new MockJobProvider();
 
-export { MockJobProvider, RemoteOKProvider, ArbeitnowProvider, AdzunaProvider, USAJOBSProvider };
+export * from './adzuna';
+export * from './usajobs';
+export * from './arbeitnow';
+export * from './remote-ok';
+export * from './jooble';
+export * from './careerjet';
+export * from './reed';
+export * from './findwork';
+export * from './mock-provider';
