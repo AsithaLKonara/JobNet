@@ -1,5 +1,5 @@
 import { JobSearchParams, NormalizedJob, SearchResultPayload, ProviderHealth } from '@/types/job';
-import { LIVE_PROVIDERS, FALLBACK_PROVIDER } from '@/providers/jobs';
+import { LIVE_PROVIDERS } from '@/providers/jobs';
 import { deduplicateJobs, inferJobTags, inferExperienceLevel, validateAndCleanJob } from '@/utils/helpers';
 import { withDbFallback } from '@/lib/prisma';
 
@@ -80,17 +80,6 @@ export class JobService {
           baseJobs = baseJobs.concat(enriched);
           providersUsed.push(result.value.provider);
         }
-      }
-
-      // 3. Fallback circuit breaker if all live networks fail or rate-limit
-      if (baseJobs.length === 0) {
-        console.warn('[JobService Circuit Breaker] Live providers returned 0 results. Executing resilient fallback feed.');
-        const fallbackResults = await FALLBACK_PROVIDER.searchJobs(params);
-        baseJobs = fallbackResults.map(j => ({
-          ...j,
-          experienceLevel: j.experienceLevel || inferExperienceLevel(j.title, j.description)
-        }));
-        providersUsed.push(FALLBACK_PROVIDER.name);
       }
 
       // Pass through Data Sanctity verification filter to drop anomalous physical roles and spam tags
@@ -205,8 +194,8 @@ export class JobService {
       } as NormalizedJob;
     }
 
-    // Search across integrated feeds
-    for (const p of [...LIVE_PROVIDERS, FALLBACK_PROVIDER]) {
+    // Search across integrated live feeds
+    for (const p of LIVE_PROVIDERS) {
       if (p.getJob) {
         try {
           const res = await p.getJob(id);

@@ -19,7 +19,7 @@
 
 ### 2. ⚡ Multi-Provider Concurrent Aggregation Engine (8 Global Networks)
 Instead of relying on a single vulnerability-prone data feed, JobNet features an extensible 8-network provider architecture (`src/providers/`):
-- **Integrated Feeds:** Concurrently interrogates **RemoteOK** (Remote Tech), **USAJOBS** (U.S. Federal Platform), **Arbeitnow** (EU/Visa Sponsorship), **Adzuna** (16+ Nations), **Jooble** (Worldwide Aggregates), **Careerjet** (Global Affiliate Engine), **Reed.co.uk** (UK & Europe), **Findwork.dev** (Global Dev & Startups), and resilient fallback datasets.
+- **Integrated Feeds:** Concurrently interrogates **RemoteOK** (Remote Tech), **USAJOBS** (U.S. Federal Platform), **Arbeitnow** (EU/Visa Sponsorship), **Adzuna** (16+ Nations), **Jooble** (Worldwide Aggregation), **Careerjet** (Global Affiliate Engine), **Reed.co.uk** (UK & Europe), and **Findwork.dev** (Global Dev & Startups).
 - **Asynchronous Isolation:** Evaluated via strict `Promise.allSettled()` execution vectors. Single-provider network latencies, rate limits, or regional outages never degrade search latency for the end user.
 - **Real-Time Deduplication:** Implements cryptographic MD5-equivalent hashing (`src/utils/helpers.ts`) over normalized company names, vacancy roles, and coordinate strings to purge cross-board duplicates in milliseconds.
 
@@ -68,7 +68,6 @@ Instead of relying on a single vulnerability-prone data feed, JobNet features an
 │   ├── providers/            # Third-party job feed network layer
 │   │   ├── adzuna.ts         # Adzuna REST integration
 │   │   ├── arbeitnow.ts      # Arbeitnow open job API parser
-│   │   ├── mock-provider.ts  # Determinist offline development dataset
 │   │   ├── remote-ok.ts      # RemoteOK JSON feed integration
 │   │   └── usajobs.ts        # USAJOBS Authorization & OPM grading conversion
 │   ├── services/
