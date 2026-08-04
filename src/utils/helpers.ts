@@ -132,26 +132,37 @@ export function inferJobTags(title: string, description: string = ''): string[] 
 
 /**
  * Senior Architect Data Sanctity & Accuracy Guardrail:
- * Intercepts third-party listings to identify and reject anomalous physical roles claiming to be "Remote"
- * and sanitizes spammy tags that do not match the vacancy subject.
+ * Intercepts third-party listings to eliminate non-occupational spam, promotional blog ads,
+ * anomalies, and enforces professional vacancy standards.
  */
 export function validateAndCleanJob(job: NormalizedJob): NormalizedJob | null {
   const titleLower = job.title.trim().toLowerCase();
   const descLower = job.description.toLowerCase();
 
-  // 1. Block anomalous on-site manual trades from polluting worldwide remote technical feeds
-  const physicalManualTrades = /\b(fireman|firefighter|security guard|janitor|custodian|plumber|forklift|cashier|warehouse worker|electrician|mechanic|chef|cook|bartender|waiter|waitress|housekeeper|truck driver|taxi driver|delivery driver)\b/i;
-  
-  if (physicalManualTrades.test(titleLower) && !/\b(software|engineer|developer|it|tech|programmer|analyst|manager|sales|marketing|support|designer)\b/i.test(titleLower)) {
-    // A role titled simply "Fireman" or "Forklift Driver" claiming worldwide remote is a data anomaly/spam upload
-    console.warn(`[Data Sanctity Filter] Rejected anomalous job listing from ${job.provider}: "${job.title}" at "${job.company}"`);
+  // 1. Block promotional blog articles, recruitment ads, and generic talent pools
+  const promotionalSpamRegex = /\b(expression of interest|general interest|open roles|meet us|team member|join the|future remote|we hire|things on your cv|your job is|put the effort|studio|burger|hiring fast|why you are not|top 10|how to|reasons why|newsletter|podcast|webinar)\b/i;
+  if (promotionalSpamRegex.test(titleLower) || titleLower.split(/\s+/).length > 10 || titleLower.includes('?')) {
+    console.warn(`[Data Sanctity Filter] Rejected promotional/spam vacancy from ${job.provider}: "${job.title}" at "${job.company}"`);
     return null;
   }
 
-  // 2. Validate tags to strip hallucinated spam keywords from third-party boards
+  // 2. Block anomalous on-site manual trades from polluting worldwide remote technical feeds
+  const physicalManualTrades = /\b(fireman|firefighter|security guard|janitor|custodian|plumber|forklift|cashier|warehouse worker|electrician|mechanic|chef|cook|bartender|waiter|waitress|housekeeper|truck driver|taxi driver|delivery driver)\b/i;
+  if (physicalManualTrades.test(titleLower) && !/\b(software|engineer|developer|it|tech|programmer|analyst|manager|sales|marketing|support|designer)\b/i.test(titleLower)) {
+    console.warn(`[Data Sanctity Filter] Rejected anomalous physical trade from ${job.provider}: "${job.title}" at "${job.company}"`);
+    return null;
+  }
+
+  // 3. Mandatory Professional Role Verification (must contain a real occupational discipline or domain)
+  const validRoleKeywords = /\b(engineer|developer|dev|programming|programmer|architect|designer|design|manager|management|director|executive|lead|leader|analyst|analytics|scientist|science|admin|administrator|specialist|consultant|advisor|counselor|coordinator|recruiter|recruiting|hr|human resources|talent|marketing|marketer|sales|account executive|customer|support|service|operations|ops|qa|tester|testing|quality|devops|sre|cloud|infrastructure|security|cyber|data|ai|ml|llm|machine learning|full stack|frontend|backend|ui|ux|product|project|scrum|agile|finance|financial|accountant|accounting|legal|counsel|lawyer|writer|editor|content|copywriter|medical|health|pharmacist|research|researcher|teacher|educator|trainer|intern|internship|fellow|technician|representative|agent|buyer|purchasing|procurement|logistics)\b/i;
+  if (!validRoleKeywords.test(titleLower)) {
+    console.warn(`[Data Sanctity Filter] Rejected non-occupational title from ${job.provider}: "${job.title}" at "${job.company}"`);
+    return null;
+  }
+
+  // 4. Validate tags to strip hallucinated spam keywords from third-party boards
   let cleanTags = job.tags.filter(tag => {
     const t = tag.toLowerCase();
-    // If tag claims 'web dev', 'ecommerce', or 'amazon', verify it is actually mentioned in role or specifications
     if (['web dev', 'dev', 'ecommerce', 'amazon', 'digital nomad', 'blockchain', 'crypto'].includes(t)) {
       return titleLower.includes(t) || descLower.includes(t) || /\b(code|software|programming|web|developer|engineer|tech)\b/i.test(titleLower);
     }
