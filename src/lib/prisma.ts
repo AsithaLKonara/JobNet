@@ -14,7 +14,7 @@ function createPrismaClient(): PrismaClient {
   
   return new PrismaClient({
     adapter: adapter as any,
-    log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
+    log: [],
   });
   /* eslint-enable @typescript-eslint/no-explicit-any */
 }
